@@ -1,0 +1,10 @@
+[project]
+name = "Works_of_fire"
+version = "0.1.0"
+description = "Firework simulator"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "pygame-ce>=2.5.7",
+    "setuptools>=82.0.1",
+]
