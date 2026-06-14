@@ -8,7 +8,7 @@ import pygame
 
 WIDTH = 1280
 HEIGHT = 720
-FPS = 60
+FPS = 120
 
 GRAVITY = pygame.Vector2(0, 120)
 BACKGROUND_TOP = (5, 8, 18)
@@ -167,6 +167,10 @@ class Particle:
         self.strobe = strobe
         self.dead = False
         self.phase = random.random() * 10
+        self.fragment_shape = random.choice(("dot", "dot", "dot", "dash", "tri"))
+        self.rotation = random.random() * math.tau
+        self.spin = random.uniform(-9.0, 9.0)
+        self.white_hot = random.random() < 0.14
 
     def update(self, dt):
         self.trail.append(self.pos.copy())
@@ -175,6 +179,7 @@ class Particle:
         self.vel *= drag_factor
         self.vel += GRAVITY * self.gravity_scale * dt
         self.pos += self.vel * dt
+        self.rotation += self.spin * dt
 
         self.life -= dt
         if self.life <= 0:
@@ -187,7 +192,7 @@ class Particle:
     @property
     def brightness(self):
         t = self.life / self.max_life
-        return clamp(t * t, 0.0, 1.0)
+        return clamp(t ** 1.35, 0.0, 1.0)
 
     def current_color(self):
         t = self.age_ratio
@@ -196,7 +201,10 @@ class Particle:
         if t < 0.18:
             return lerp_color(hot, main, t / 0.18)
 
-        return lerp_color(main, ember, (t - 0.18) / 0.82)
+        color = lerp_color(main, ember, (t - 0.18) / 0.82)
+        if self.white_hot and t < 0.72:
+            return lerp_color(color, (255, 252, 230), 0.38 * (1.0 - t))
+        return color
 
     def visible_this_frame(self):
         if not self.strobe:
@@ -293,17 +301,15 @@ class FireworkManager:
         self.shake = max(self.shake, min(10.0, preset.particle_count / 90))
 
     def spawn_sphere(self, origin, preset, palette):
-        golden_angle = math.pi * (3 - math.sqrt(5))
-
-        for i in range(preset.particle_count):
-            angle = i * golden_angle + random.uniform(-0.04, 0.04)
-            radius_bias = math.sqrt(random.random())
+        for _ in range(preset.particle_count):
+            angle = random.random() * math.tau
+            radius_bias = random.random() ** 0.38
             speed = lerp(preset.speed_min, preset.speed_max, radius_bias)
 
-            vertical_squash = random.uniform(0.78, 1.08)
+            vertical_squash = random.uniform(0.72, 1.12)
             vel = pygame.Vector2(math.cos(angle), math.sin(angle) * vertical_squash) * speed
 
-            vel += pygame.Vector2(random.uniform(-20, 20), random.uniform(-20, 20))
+            vel += pygame.Vector2(random.uniform(-34, 34), random.uniform(-34, 34))
 
             self.particles.append(
                 Particle(
@@ -311,7 +317,7 @@ class FireworkManager:
                     vel,
                     palette,
                     random.uniform(preset.life_min, preset.life_max),
-                    random.uniform(0.7, 1.8),
+                    random.uniform(0.45, 1.15),
                     preset.drag + random.uniform(-0.004, 0.004),
                     preset.gravity_scale,
                     preset.trail_length,
@@ -335,7 +341,7 @@ class FireworkManager:
                     vel,
                     palette,
                     random.uniform(preset.life_min, preset.life_max),
-                    random.uniform(0.6, 1.5),
+                    random.uniform(0.45, 1.05),
                     preset.drag,
                     preset.gravity_scale,
                     preset.trail_length,
@@ -358,7 +364,7 @@ class FireworkManager:
                     vel,
                     palette,
                     random.uniform(0.35, 0.8),
-                    random.uniform(0.5, 1.2),
+                    random.uniform(0.35, 0.9),
                     0.94,
                     0.6,
                     8,
@@ -422,22 +428,16 @@ class Renderer:
         )
 
     def fade_layers(self):
-        self.trail_layer.fill((0, 0, 0, 0))
-        self.smoke_layer.fill((0, 0, 0, 0))
-        self.glow_layer.fill((0, 0, 0, 0))
+        self.trail_layer.fill((245, 245, 245, 176), special_flags=pygame.BLEND_RGBA_MULT)
+        self.smoke_layer.fill((252, 252, 252, 214), special_flags=pygame.BLEND_RGBA_MULT)
+        self.glow_layer.fill((238, 238, 238, 150), special_flags=pygame.BLEND_RGBA_MULT)
         self.spark_layer.fill((0, 0, 0, 0))
 
     def draw_shells(self, shells):
         for shell in shells:
-            points = list(shell.trail)
-            for i in range(1, len(points)):
-                t = i / len(points)
-                alpha = int(180 * t)
-                color = (*shell.palette[1], alpha)
-                pygame.draw.line(self.trail_layer, color, points[i - 1], points[i], max(1, int(3 * t)))
-
+            pygame.draw.circle(self.trail_layer, (*shell.palette[1], 105), shell.pos, 1)
             pygame.draw.circle(self.spark_layer, (255, 245, 210), shell.pos, 1)
-            pygame.draw.circle(self.spark_layer, (*shell.palette[1], 80), shell.pos, 3)
+            pygame.draw.circle(self.spark_layer, (*shell.palette[1], 40), shell.pos, 2)
 
     def draw_smoke(self, smoke_particles):
         for smoke in smoke_particles:
@@ -446,6 +446,35 @@ class Renderer:
 
             color = (95, 95, 100, smoke.alpha)
             pygame.draw.circle(self.smoke_layer, color, smoke.pos, int(smoke.size))
+
+    def draw_fragment(self, surface, particle, color, alpha):
+        x = int(particle.pos.x)
+        y = int(particle.pos.y)
+        size = max(1, int(round(particle.size)))
+
+        if particle.fragment_shape == "dash":
+            length = max(1.5, particle.size * 2.8)
+            dx = math.cos(particle.rotation) * length
+            dy = math.sin(particle.rotation) * length
+            pygame.draw.line(
+                surface,
+                (*color, alpha),
+                (int(x - dx), int(y - dy)),
+                (int(x + dx), int(y + dy)),
+                1,
+            )
+            return
+
+        if particle.fragment_shape == "tri":
+            radius = max(1.0, particle.size * 1.7)
+            points = []
+            for i in range(3):
+                angle = particle.rotation + i * math.tau / 3
+                points.append((int(x + math.cos(angle) * radius), int(y + math.sin(angle) * radius)))
+            pygame.draw.polygon(surface, (*color, alpha), points)
+            return
+
+        pygame.draw.circle(surface, (*color, alpha), (x, y), size)
 
     def draw_particles(self, particles):
         for p in particles:
@@ -456,34 +485,22 @@ class Renderer:
             brightness = p.brightness
             alpha = int(255 * brightness)
 
-            trail_points = list(p.trail)
-            if len(trail_points) > 1:
-                for i in range(1, len(trail_points)):
-                    t = i / len(trail_points)
-                    trail_alpha = int(alpha * t * 0.55)
-                    width = max(1, int(p.size * t))
-                    pygame.draw.line(
-                        self.trail_layer,
-                        (*color, trail_alpha),
-                        trail_points[i - 1],
-                        trail_points[i],
-                        width,
-                    )
+            self.draw_fragment(self.trail_layer, p, color, int(alpha * 0.78))
 
             glow_pos = (int(p.pos.x / 2), int(p.pos.y / 2))
-            glow_radius = int((8 + p.size * 6) * brightness)
+            glow_radius = int((1.5 + p.size * 2.5) * brightness)
             if glow_radius > 1:
                 pygame.draw.circle(
                     self.glow_layer,
-                    (*color, int(80 * brightness)),
+                    (*color, int(28 * brightness)),
                     glow_pos,
                     glow_radius,
                 )
 
-            core_radius = max(1, int(p.size * brightness))
-            pygame.draw.circle(self.spark_layer, (*color, alpha), p.pos, core_radius)
+            if brightness > 0.05:
+                self.draw_fragment(self.spark_layer, p, color, min(255, int(alpha * 1.05)))
 
-            if brightness > 0.55:
+            if brightness > 0.68:
                 pygame.draw.circle(self.spark_layer, (255, 250, 230, int(180 * brightness)), p.pos, 1)
 
     def composite(self, offset):
