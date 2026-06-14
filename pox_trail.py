@@ -29,7 +29,7 @@ def main():
             pox.add_charge(random.randint(1, x_res), random.randint(1, y_res), random.randint(100, 2000),
                            (random.randint(1, 255), random.randint(1, 255), random.randint(1, 255)), True)
 
-        alpha_surf.fill((255, 255, 255, 120), special_flags=pg.BLEND_RGBA_MULT)
+        alpha_surf.fill((255, 255, 255, random.uniform(120.0, 200.0)), special_flags=pg.BLEND_RGBA_MULT)
 
         screen.fill((0, 0, 0))
         pox.spriteGroup.update(alpha_surf)
